@@ -1,4 +1,3 @@
-```markdown
 # Vision Voice Object Recognizer
 
 A free, lightweight, client-side web application that performs real-time AI object detection via webcam and responds to voice commands with English speech synthesis. Powered by TensorFlow.js and COCO-SSD, it runs 100% locally in your browser with zero server setup or API keys required.
