@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Object Recognizer Voice Assistant</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- TensorFlow.js and COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* High Contrast Mode CSS Rules */
+        .high-contrast {
+            background-color: #000000 !important;
+            color: #ffffff !important;
+        }
+        .high-contrast .hc-card {
+            background-color: #111111 !important;
+            border: 2px solid #ffff00 !important;
+            color: #ffffff !important;
+        }
+        .high-contrast .hc-btn-primary {
+            background-color: #ffff00 !important;
+            color: #000000 !important;
+            font-weight: bold !important;
+            border: 2px solid #ffffff !important;
+        }
+        .high-contrast .hc-btn-secondary {
+            background-color: #00ffff !important;
+            color: #000000 !important;
+            font-weight: bold !important;
+        }
+        .high-contrast .hc-accent {
+            color: #ffff00 !important;
+        }
+
+        /* Pulse animation for microphone */
+        @keyframes pulse-red {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .listening-pulse {
+            animation: pulse-red 1.5s infinite;
+        }
+
+        /* Canvas overlay smooth rendering */
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-brand-500 selection:text-white">
+
+    <!-- Header -->
+    <header class="w-full bg-slate-800/80 backdrop-blur border-b border-slate-700/60 sticky top-0 z-50 px-4 py-3 hc-card">
+        <div class="max-w-6xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-brand-500 text-slate-900 p-2.5 rounded-xl font-bold flex items-center justify-center shadow-lg shadow-brand-500/20 hc-btn-primary">
+                    <i class="fa-solid font-bold fa-eye text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        VisionVoice <span class="text-xs bg-brand-500/20 text-brand-500 px-2 py-0.5 rounded-full font-semibold border border-brand-500/30 hc-accent">FREE & UNLIMITED</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">AI Object Recognizer & Voice Assistant</p>
+                </div>
+            </div>
+
+            <!-- Header Quick Actions -->
+            <div class="flex items-center space-x-2">
+                <button id="toggleHighContrastBtn" title="Toggle High Contrast Mode for Visual Impairment" class="p-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition focus:ring-2 focus:ring-brand-500 hc-btn-secondary">
+                    <i class="fa-solid fa-circle-half-stroke text-lg"></i>
+                    <span class="sr-only">High Contrast</span>
+                </button>
+                <button id="toggleVoiceAssistantBtn" class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium text-sm transition shadow-md hc-btn-primary">
+                    <i id="voiceAssistantIcon" class="fa-solid fa-microphone"></i>
+                    <span id="voiceAssistantStatusText" class="hidden sm:inline">Voice Control ON</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-6xl w-full mx-auto p-4 md:p-6 flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left/Center Column: Camera Viewfinder & Direct Controls -->
+        <div class="lg:col-span-2 flex flex-col space-y-4">
+            
+            <!-- Video Container Card -->
+            <div id="videoContainer" class="relative bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center min-h-[320px] md:min-h-[480px] hc-card">
+                
+                <!-- Camera Video Stream -->
+                <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover rounded-2xl hidden"></video>
+                
+                <!-- Bounding Boxes Canvas Overlay -->
+                <canvas id="detectionCanvas" class="absolute inset-0 w-full h-full pointer-events-none rounded-2xl"></canvas>
+
+                <!-- Loading State Overlay -->
+                <div id="loadingOverlay" class="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center p-6 text-center z-10 space-y-4">
+                    <div class="relative flex items-center justify-center">
+                        <div class="w-16 h-16 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
+                        <i class="fa-solid fa-brain absolute text-brand-500 text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-white">Loading AI Computer Vision...</h3>
+                        <p id="loadingSubtext" class="text-sm text-slate-400 mt-1">Downloading lightweight detection model into your browser memory.</p>
+                    </div>
+                </div>
+
+                <!-- Camera Off Placeholder -->
+                <div id="cameraOffPlaceholder" class="flex flex-col items-center justify-center text-center p-8 space-y-4">
+                    <div class="w-20 h-20 rounded-full bg-slate-800/80 flex items-center justify-center text-slate-500 text-3xl mb-2">
+                        <i class="fa-solid fa-video-slash"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-200">Camera is Inactive</h3>
+                    <p class="text-sm text-slate-400 max-w-xs">Start your camera to begin continuous or voice-triggered object recognition.</p>
+                    <button id="startCamBtn" class="mt-2 px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-xl shadow-lg shadow-brand-600/30 transition flex items-center space-x-2 hc-btn-primary">
+                        <i class="fa-solid fa-camera"></i>
+                        <span>Turn On Camera</span>
+                    </button>
+                </div>
+
+                <!-- Live Status Badge on Top Left -->
+                <div id="liveBadge" class="hidden absolute top-4 left-4 z-20 flex items-center space-x-2 bg-slate-900/80 backdrop-blur px-3 py-1.5 rounded-full border border-slate-700/50 text-xs font-semibold">
+                    <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                    <span class="text-slate-200" id="fpsCounter">CAMERA LIVE</span>
+                </div>
+
+                <!-- Scanning Indicator -->
+                <div id="scanAnimation" class="hidden absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-brand-500 to-transparent animate-pulse z-20"></div>
+            </div>
+
+            <!-- Primary Action Buttons -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button id="scanNowBtn" disabled class="disabled:opacity-50 disabled:cursor-not-allowed bg-brand-600 hover:bg-brand-500 text-white font-bold py-3.5 px-4 rounded-xl flex items-center justify-center space-x-2 shadow-lg shadow-brand-600/20 transition active:scale-95 hc-btn-primary">
+                    <i class="fa-solid fa-expand text-lg"></i>
+                    <span>Scan Object</span>
+                </button>
+
+                <button id="toggleAutoScanBtn" disabled class="disabled:opacity-50 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center space-x-2 border border-slate-700 transition hc-card">
+                    <i id="autoScanIcon" class="fa-solid fa-rotate text-lg"></i>
+                    <span id="autoScanText">Auto Scan: OFF</span>
+                </button>
+
+                <button id="voiceCommandTriggerBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center space-x-2 border border-slate-700 transition hc-card">
+                    <i id="micBtnIcon" class="fa-solid fa-microphone text-lg text-brand-500"></i>
+                    <span id="micBtnText">Listen Command</span>
+                </button>
+
+                <button id="switchCameraBtn" disabled class="disabled:opacity-50 disabled:cursor-not-allowed bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center space-x-2 border border-slate-700 transition hc-card">
+                    <i class="fa-solid fa-camera-rotate text-lg"></i>
+                    <span>Flip Camera</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Column: Results, Voice Log & Settings -->
+        <div class="flex flex-col space-y-6">
+
+            <!-- Recognized Objects Display Card -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 flex flex-col flex-grow shadow-xl hc-card">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-700/60 mb-4">
+                    <h2 class="font-bold text-lg text-white flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-brand-500"></i> Detected Objects
+                    </h2>
+                    <span id="objectCountBadge" class="bg-slate-700 text-slate-300 text-xs px-2.5 py-1 rounded-full font-bold">0 found</span>
+                </div>
+
+                <!-- Recognized List -->
+                <div id="objectsList" class="space-y-2 max-h-56 overflow-y-auto pr-1 flex-grow">
+                    <div class="text-center py-8 text-slate-500 flex flex-col items-center">
+                        <i class="fa-solid fa-box-open text-3xl mb-2 opacity-50"></i>
+                        <p class="text-sm">No objects detected yet.</p>
+                        <p class="text-xs text-slate-500 mt-1">Press "Scan Object" or ask "What do you see?"</p>
+                    </div>
+                </div>
+
+                <!-- TTS Audio Feedback Controls -->
+                <div class="mt-4 pt-4 border-t border-slate-700/60 space-y-3">
+                    <div class="flex items-center justify-between text-xs font-semibold text-slate-300">
+                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-volume-high text-brand-500"></i> Speech Volume</span>
+                        <span id="volumeValue">100%</span>
+                    </div>
+                    <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="1" class="w-full accent-brand-500 bg-slate-700 h-2 rounded-lg cursor-pointer">
+
+                    <div class="flex items-center justify-between text-xs font-semibold text-slate-300 pt-1">
+                        <span class="flex items-center gap-1.5"><i class="fa-solid fa-gauge-high text-brand-500"></i> Speech Speed</span>
+                        <span id="rateValue">1.0x</span>
+                    </div>
+                    <input type="range" id="rateSlider" min="0.5" max="2" step="0.1" value="1" class="w-full accent-brand-500 bg-slate-700 h-2 rounded-lg cursor-pointer">
+                </div>
+            </div>
+
+            <!-- Voice Assistant Status & Helper -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-3 hc-card">
+                <h3 class="font-bold text-sm text-slate-200 uppercase tracking-wider flex items-center justify-between">
+                    <span><i class="fa-solid fa-comment-dots text-brand-500 mr-2"></i> Voice Commands</span>
+                    <span id="listeningIndicator" class="hidden text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30 flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span> Listening
+                    </span>
+                </h3>
+
+                <p id="transcriptBox" class="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50 min-h-[48px] italic flex items-center">
+                    "Click 'Listen Command' or say 'What do you see?'..."
+                </p>
+
+                <div class="text-xs text-slate-400 space-y-1.5 pt-1">
+                    <p class="font-semibold text-slate-300">Try saying:</p>
+                    <ul class="grid grid-cols-2 gap-1.5">
+                        <li class="bg-slate-700/40 px-2 py-1 rounded border border-slate-700/40">🗣️ "What do you see?"</li>
+                        <li class="bg-slate-700/40 px-2 py-1 rounded border border-slate-700/40">🗣️ "Scan object"</li>
+                        <li class="bg-slate-700/40 px-2 py-1 rounded border border-slate-700/40">🗣️ "Read objects"</li>
+                        <li class="bg-slate-700/40 px-2 py-1 rounded border border-slate-700/40">🗣️ "Turn on camera"</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full bg-slate-950 border-t border-slate-800/80 py-4 px-4 text-center text-xs text-slate-500 hc-card">
+        <div class="max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
+            <p>100% Free & Unlimited Voice Object Detection Assistant. Runs entirely inside your local browser.</p>
+            <p class="text-slate-400">Powered by TensorFlow.js COCO-SSD & Web Speech API</p>
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * VisionVoice - Object Recognizer Voice Assistant
+         * Single-file standalone HTML5 Application
+         */
+
+        // App State Variables
+        let model = null;
+        let isCameraActive = false;
+        let isAutoScanning = false;
+        let autoScanInterval = null;
+        let currentFacingMode = 'environment'; // Default to back camera on mobile
+        let stream = null;
+        let speechSynth = window.speechSynthesis;
+        let speechRecognition = null;
+        let isListening = false;
+        let voiceAssistantEnabled = true;
+        let lastDetectedObjects = [];
+
+        // DOM Elements
+        const webcam = document.getElementById('webcam');
+        const canvas = document.getElementById('detectionCanvas');
+        const ctx = canvas.getContext('2d');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const cameraOffPlaceholder = document.getElementById('cameraOffPlaceholder');
+        const startCamBtn = document.getElementById('startCamBtn');
+        const scanNowBtn = document.getElementById('scanNowBtn');
+        const toggleAutoScanBtn = document.getElementById('toggleAutoScanBtn');
+        const autoScanText = document.getElementById('autoScanText');
+        const autoScanIcon = document.getElementById('autoScanIcon');
+        const switchCameraBtn = document.getElementById('switchCameraBtn');
+        const objectsList = document.getElementById('objectsList');
+        const objectCountBadge = document.getElementById('objectCountBadge');
+        const liveBadge = document.getElementById('liveBadge');
+        const volumeSlider = document.getElementById('volumeSlider');
+        const volumeValue = document.getElementById('volumeValue');
+        const rateSlider = document.getElementById('rateSlider');
+        const rateValue = document.getElementById('rateValue');
+        const voiceCommandTriggerBtn = document.getElementById('voiceCommandTriggerBtn');
+        const micBtnIcon = document.getElementById('micBtnIcon');
+        const micBtnText = document.getElementById('micBtnText');
+        const transcriptBox = document.getElementById('transcriptBox');
+        const listeningIndicator = document.getElementById('listeningIndicator');
+        const toggleVoiceAssistantBtn = document.getElementById('toggleVoiceAssistantBtn');
+        const voiceAssistantStatusText = document.getElementById('voiceAssistantStatusText');
+        const toggleHighContrastBtn = document.getElementById('toggleHighContrastBtn');
+
+        // Audio Effects Generator using Web Audio API (No external assets required)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playBeepSound(type = 'scan') {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'scan') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+                osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15); // A5
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            } else if (type === 'listen') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(660, audioCtx.currentTime + 0.2);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+
+        // Load TensorFlow.js COCO-SSD Model
+        async function loadModel() {
+            try {
+                model = await cocoSsd.load();
+                loadingOverlay.classList.add('hidden');
+                speakText("Voice Assistant ready. Please turn on your camera.");
+            } catch (error) {
+                console.error("Failed to load COCO-SSD model:", error);
+                document.getElementById('loadingSubtext').innerText = "Error loading AI model. Please check your network connection.";
+                document.getElementById('loadingSubtext').classList.add('text-red-400');
+            }
+        }
+
+        // Start Webcam Stream
+        async function startCamera() {
+            if (isCameraActive) return;
+
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: currentFacingMode,
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                webcam.srcObject = stream;
+
+                webcam.onloadedmetadata = () => {
+                    webcam.play();
+                    isCameraActive = true;
+                    
+                    // Show webcam view & enable buttons
+                    webcam.classList.remove('hidden');
+                    cameraOffPlaceholder.classList.add('hidden');
+                    liveBadge.classList.remove('hidden');
+                    
+                    scanNowBtn.disabled = false;
+                    toggleAutoScanBtn.disabled = false;
+                    switchCameraBtn.disabled = false;
+
+                    // Match Canvas Dimensions
+                    resizeCanvas();
+                    window.addEventListener('resize', resizeCanvas);
+
+                    speakText("Camera activated. You can now scan objects.");
+                };
+            } catch (err) {
+                console.error("Camera access error:", err);
+                alert("Could not access camera. Please make sure you have granted camera permissions.");
+                speakText("Camera access denied or unequipped.");
+            }
+        }
+
+        // Stop Webcam Stream
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            isCameraActive = false;
+            webcam.classList.add('hidden');
+            cameraOffPlaceholder.classList.remove('hidden');
+            liveBadge.classList.add('hidden');
+
+            scanNowBtn.disabled = true;
+            toggleAutoScanBtn.disabled = true;
+            switchCameraBtn.disabled = true;
+
+            if (isAutoScanning) {
+                toggleAutoScan();
+            }
+
+            // Clear canvas overlay
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // Switch front/back camera
+        async function switchCamera() {
+            currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+            stopCamera();
+            await startCamera();
+        }
+
+        // Adjust canvas dimension to match video overlay
+        function resizeCanvas() {
+            if (webcam.videoWidth && webcam.videoHeight) {
+                canvas.width = webcam.clientWidth;
+                canvas.height = webcam.clientHeight;
+            }
+        }
+
+        // Run Object Recognition on Current Frame
+        async function detectObjects(speakResult = true) {
+            if (!model || !isCameraActive || webcam.readyState !== 4) return;
+
+            playBeepSound('scan');
+
+            // Detect predictions
+            const predictions = await model.detect(webcam);
+
+            // Draw bounding boxes on Canvas
+            drawPredictions(predictions);
+
+            // Update UI list
+            updateObjectsList(predictions);
+
+            lastDetectedObjects = predictions;
+
+            if (speakResult) {
+                announceResults(predictions);
+            }
+        }
+
+        // Render predictions bounding boxes
+        function drawPredictions(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const scaleX = canvas.width / webcam.videoWidth;
+            const scaleY = canvas.height / webcam.videoHeight;
+
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                
+                const scaledX = x * scaleX;
+                const scaledY = y * scaleY;
+                const scaledWidth = width * scaleX;
+                const scaledHeight = height * scaleY;
+
+                // Draw Box
+                ctx.strokeStyle = '#22c55e';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
+
+                // Draw Label Background
+                ctx.fillStyle = '#22c55e';
+                const text = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+                ctx.font = '14px Inter, sans-serif';
+                const textWidth = ctx.measureText(text).width;
+                ctx.fillRect(scaledX, scaledY > 25 ? scaledY - 25 : scaledY, textWidth + 10, 24);
+
+                // Draw Label Text
+                ctx.fillStyle = '#0f172a';
+                ctx.fillText(text, scaledX + 5, scaledY > 25 ? scaledY - 8 : scaledY + 16);
+            });
+        }
+
+        // Update list on UI
+        function updateObjectsList(predictions) {
+            objectCountBadge.innerText = `${predictions.length} found`;
+
+            if (predictions.length === 0) {
+                objectsList.innerHTML = `
+                    <div class="text-center py-8 text-slate-500 flex flex-col items-center">
+                        <i class="fa-solid fa-box-open text-3xl mb-2 opacity-50"></i>
+                        <p class="text-sm">No objects detected in frame.</p>
+                    </div>`;
+                return;
+            }
+
+            objectsList.innerHTML = predictions.map(p => `
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/80 border border-slate-700/50 hover:border-brand-500/50 transition">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-2.5 h-2.5 rounded-full bg-brand-500"></div>
+                        <span class="font-semibold text-sm capitalize text-slate-200">${p.class}</span>
+                    </div>
+                    <span class="text-xs bg-brand-500/10 text-brand-400 px-2 py-0.5 rounded font-mono font-bold border border-brand-500/20">
+                        ${Math.round(p.score * 100)}%
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        // Toggle Continuous Auto Scan Mode
+        function toggleAutoScan() {
+            isAutoScanning = !isAutoScanning;
+
+            if (isAutoScanning) {
+                autoScanText.innerText = "Auto Scan: ON";
+                autoScanText.classList.add("text-brand-400");
+                autoScanIcon.classList.add("animate-spin");
+                toggleAutoScanBtn.classList.add("border-brand-500");
+
+                // Scan every 2.5 seconds
+                autoScanInterval = setInterval(() => {
+                    detectObjects(true);
+                }, 2500);
+
+                speakText("Auto scan activated.");
+            } else {
+                autoScanText.innerText = "Auto Scan: OFF";
+                autoScanText.classList.remove("text-brand-400");
+                autoScanIcon.classList.remove("animate-spin");
+                toggleAutoScanBtn.classList.remove("border-brand-500");
+
+                clearInterval(autoScanInterval);
+                speakText("Auto scan deactivated.");
+            }
+        }
+
+        // Speak out text using Web Speech Synthesis API
+        function speakText(text) {
+            if (!speechSynth || !voiceAssistantEnabled) return;
+
+            // Cancel ongoing speech
+            speechSynth.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.volume = parseFloat(volumeSlider.value);
+            utterance.rate = parseFloat(rateSlider.value);
+            utterance.lang = 'en-US';
+
+            // Select natural English voice if available
+            const voices = speechSynth.getVoices();
+            const englishVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural')));
+            if (englishVoice) {
+                utterance.voice = englishVoice;
+            }
+
+            speechSynth.speak(utterance);
+        }
+
+        // Format and announce detected objects
+        function announceResults(predictions) {
+            if (predictions.length === 0) {
+                speakText("I don't see any recognizable objects right now.");
+                return;
+            }
+
+            // Group detected objects by count (e.g. "2 persons, 1 cell phone")
+            const objectCounts = {};
+            predictions.forEach(p => {
+                objectCounts[p.class] = (objectCounts[p.class] || 0) + 1;
+            });
+
+            const descriptions = Object.entries(objectCounts).map(([item, count]) => {
+                return count > 1 ? `${count} ${item}s` : `a ${item}`;
+            });
+
+            let phrase = "";
+            if (descriptions.length === 1) {
+                phrase = `I see ${descriptions[0]}.`;
+            } else if (descriptions.length === 2) {
+                phrase = `I see ${descriptions[0]} and ${descriptions[1]}.`;
+            } else {
+                const lastItem = descriptions.pop();
+                phrase = `I see ${descriptions.join(', ')}, and ${lastItem}.`;
+            }
+
+            speakText(phrase);
+        }
+
+        // Initialize Web Speech Recognition
+        function setupSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+            if (!SpeechRecognition) {
+                transcriptBox.innerText = "Speech recognition is not supported in this browser. Use Chrome, Edge, or Safari.";
+                voiceCommandTriggerBtn.disabled = true;
+                return;
+            }
+
+            speechRecognition = new SpeechRecognition();
+            speechRecognition.continuous = false;
+            speechRecognition.interimResults = false;
+            speechRecognition.lang = 'en-US';
+
+            speechRecognition.onstart = () => {
+                isListening = true;
+                listeningIndicator.classList.remove('hidden');
+                micBtnIcon.classList.add('listening-pulse', 'text-red-500');
+                micBtnText.innerText = "Listening...";
+                transcriptBox.innerText = "Listening for voice command...";
+                playBeepSound('listen');
+            };
+
+            speechRecognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript.toLowerCase().trim();
+                transcriptBox.innerText = `"${transcript}"`;
+                handleVoiceCommand(transcript);
+            };
+
+            speechRecognition.onerror = (event) => {
+                console.error("Speech recognition error:", event.error);
+                transcriptBox.innerText = `Voice error: ${event.error}. Try clicking button again.`;
+                resetMicUI();
+            };
+
+            speechRecognition.onend = () => {
+                resetMicUI();
+            };
+        }
+
+        function resetMicUI() {
+            isListening = false;
+            listeningIndicator.classList.add('hidden');
+            micBtnIcon.classList.remove('listening-pulse', 'text-red-500');
+            micBtnText.innerText = "Listen Command";
+        }
+
+        // Handle Spoken Commands
+        function handleVoiceCommand(command) {
+            console.log("Voice Command Received:", command);
+
+            if (command.includes("what do you see") || command.includes("scan") || command.includes("look") || command.includes("detect")) {
+                if (!isCameraActive) {
+                    startCamera().then(() => {
+                        setTimeout(() => detectObjects(true), 1000);
+                    });
+                } else {
+                    detectObjects(true);
+                }
+            } else if (command.includes("turn on camera") || command.includes("start camera") || command.includes("open camera")) {
+                startCamera();
+            } else if (command.includes("turn off camera") || command.includes("stop camera") || command.includes("close camera")) {
+                stopCamera();
+                speakText("Camera stopped.");
+            } else if (command.includes("read") || command.includes("repeat") || command.includes("say again")) {
+                announceResults(lastDetectedObjects);
+            } else if (command.includes("flip camera") || command.includes("switch camera")) {
+                switchCamera();
+            } else if (command.includes("high contrast") || command.includes("contrast mode")) {
+                toggleHighContrast();
+            } else {
+                speakText("Sorry, I didn't recognize that command. Try asking 'What do you see?'");
+            }
+        }
+
+        // Trigger Voice Recognition
+        function startListening() {
+            if (!speechRecognition) return;
+            if (isListening) {
+                speechRecognition.stop();
+            } else {
+                try {
+                    speechRecognition.start();
+                } catch (e) {
+                    console.error("Speech recognition restart error:", e);
+                }
+            }
+        }
+
+        // Toggle High Contrast Mode
+        function toggleHighContrast() {
+            document.body.classList.toggle('high-contrast');
+            const isHc = document.body.classList.contains('high-contrast');
+            speakText(isHc ? "High contrast mode enabled" : "High contrast mode disabled");
+        }
+
+        // Bind UI Events
+        function setupEventListeners() {
+            startCamBtn.addEventListener('click', startCamera);
+            scanNowBtn.addEventListener('click', () => detectObjects(true));
+            toggleAutoScanBtn.addEventListener('click', toggleAutoScan);
+            switchCameraBtn.addEventListener('click', switchCamera);
+            voiceCommandTriggerBtn.addEventListener('click', startListening);
+
+            // Volume & Speed Slider Labels
+            volumeSlider.addEventListener('input', (e) => {
+                volumeValue.innerText = `${Math.round(e.target.value * 100)}%`;
+            });
+            rateSlider.addEventListener('input', (e) => {
+                rateValue.innerText = `${parseFloat(e.target.value).toFixed(1)}x`;
+            });
+
+            // Master Voice Assistant Toggle
+            toggleVoiceAssistantBtn.addEventListener('click', () => {
+                voiceAssistantEnabled = !voiceAssistantEnabled;
+                if (voiceAssistantEnabled) {
+                    toggleVoiceAssistantBtn.classList.replace('bg-slate-700', 'bg-brand-600');
+                    voiceAssistantStatusText.innerText = "Voice Control ON";
+                    speakText("Voice response enabled.");
+                } else {
+                    speechSynth.cancel();
+                    toggleVoiceAssistantBtn.classList.replace('bg-brand-600', 'bg-slate-700');
+                    voiceAssistantStatusText.innerText = "Voice Control OFF";
+                }
+            });
+
+            // High Contrast Button
+            toggleHighContrastBtn.addEventListener('click', toggleHighContrast);
+
+            // Ensure Speech Voices are Loaded
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+            }
+        }
+
+        // Initialize App on Window Load
+        window.addEventListener('DOMContentLoaded', () => {
+            setupEventListeners();
+            setupSpeechRecognition();
+            loadModel();
+        });
+    </script>
+</body>
+</html>
