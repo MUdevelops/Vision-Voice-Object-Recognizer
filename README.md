@@ -35,3 +35,38 @@ A free, lightweight, client-side web application that performs real-time AI obje
 1. **Clone the Repository**
    ```bash
    git clone [https://github.com/MUdevelops/Vision-Voice-Object-Recognizer.git](https://github.com/MUdevelops/Vision-Voice-Object-Recognizer.git)
+
+2. **Open the Application**
+Simply open `index.html` in any modern web browser (Google Chrome, Microsoft Edge, or Brave recommended for optimal speech recognition support).
+3. **Grant Permissions**
+Allow access to your **Camera** and **Microphone** when prompted.
+
+---
+
+## 🗣️ Voice Commands
+
+| Command | Action |
+| --- | --- |
+| `"Start camera"` / `"Turn on camera"` | Activates the webcam feed |
+| `"Stop camera"` / `"Turn off camera"` | Deactivates the webcam feed |
+| `"What do you see?"` / `"Scan object"` | Triggers immediate detection and reads results aloud |
+| `"Read objects"` | Speaks the list of currently detected objects |
+
+---
+
+## 🛠️ Built With
+
+* **HTML5 / CSS3 / JavaScript** (Single-file application)
+* **[TensorFlow.js](https://www.tensorflow.org/js)** — Machine learning library for JavaScript
+* **[COCO-SSD](https://github.com/tensorflow/tfjs-models/tree/master/coco-ssd)** — Pre-trained object detection model
+* **Web Speech API** — Speech Recognition & Speech Synthesis
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
+
+```
+
+```
