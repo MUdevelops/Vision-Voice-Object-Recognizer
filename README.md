@@ -34,7 +34,6 @@ Here are visual examples of the object detection in action:
    ```bash
    git clone [https://github.com/MUdevelops/Vision-Voice-Object-Recognizer.git](https://github.com/MUdevelops/Vision-Voice-Object-Recognizer.git)
 
-```
 
 2. **Open the Application**
 Simply open `index.html` in any modern web browser (Google Chrome, Microsoft Edge, or Brave recommended for optimal speech recognition support).
@@ -66,7 +65,5 @@ Allow access to your **Camera** and **Microphone** when prompted.
 ## 📄 License
 
 This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
-
-```
 
 ```
